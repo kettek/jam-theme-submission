@@ -16,3 +16,7 @@ A settings JSON file will be generated on program start. The available fields ar
     * A boolean to indicate if a captcha should be required for submission or not. Note that captions reset only after 5 minutes have elapsed.
   * `UseHeader`
     * A boolean to indicate if a header image should be used. The image should be stored at `static/header.png`.
+  * `StartDate`
+    * An RFC 3339 date for when theme submissions are allowed.
+  * `EndDate`
+    * An RFC 3339 date for when theme submissions have ended.
