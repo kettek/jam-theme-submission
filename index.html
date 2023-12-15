@@ -63,10 +63,6 @@
   {{else}}
     <h1>{{.Title}}</h1>
   {{end}}
-  <aside>
-    {{.Text}}
-  </aside>
-
   {{if .IsResults}}
     {{range $id, $c := .Results}}
       <article>
@@ -74,7 +70,18 @@
         <span>{{$c}}</span>
       </article>
     {{end}}
+  {{else if not .IsStarted}}
+    <aside>
+      Theme submissions are not yet open!
+    </aside>
+  {{else if .IsEnded}}
+    <aside>
+      Theme submissions have ended!
+    </aside>
   {{else if or .CaptchaFailed (not .IsSubmission)}}
+    <aside>
+      {{.Text}}
+    </aside>
     <form method='post'>
       {{range $idx, $e := .Submissions}}
         <label>

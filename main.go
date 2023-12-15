@@ -20,6 +20,8 @@ type Settings struct {
 	Entries    int
 	UseCaptcha bool
 	UseHeader  bool
+	StartDate  time.Time
+	EndDate    time.Time
 }
 
 type Entries map[string]int
@@ -43,6 +45,8 @@ type templateSettings struct {
 	IsSubmission    bool
 	IsResults       bool
 	Results         Entries
+	IsStarted       bool
+	IsEnded         bool
 }
 
 func init() {
@@ -61,10 +65,13 @@ func main() {
 		settings.Entries = 4
 		settings.Title = "Game Jam"
 		settings.UseCaptcha = true
+		settings.StartDate = time.Now().Add(7 * 24 * time.Hour)
+		settings.EndDate = time.Now().Add(3 * 7 * 24 * time.Hour)
 		if err := saveSettings(); err != nil {
 			fmt.Println(err)
 		}
 	}
+	fmt.Println(settings.StartDate, settings.EndDate)
 	if err := loadEntries(); err != nil {
 		fmt.Println(err)
 	}
@@ -114,6 +121,12 @@ func handleIndex(w http.ResponseWriter, r *http.Request) {
 	s.UseCaptcha = settings.UseCaptcha
 	s.Text = settings.Text
 	s.Title = settings.Title
+	if time.Since(settings.StartDate) >= 0 {
+		s.IsStarted = true
+	}
+	if time.Since(settings.EndDate) >= 0 {
+		s.IsEnded = true
+	}
 	if r.Method == "GET" {
 		tmpl, err := template.New("index.html").Funcs(funcMap).ParseFiles("index.html")
 		if err != nil {
@@ -126,6 +139,9 @@ func handleIndex(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	} else if r.Method == "POST" {
+		if !s.IsStarted || s.IsEnded {
+			return
+		}
 		if err := r.ParseForm(); err != nil {
 			fmt.Println(err)
 			return
