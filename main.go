@@ -15,6 +15,7 @@ import (
 
 // Settings contains the theme submission settings.
 type Settings struct {
+	Address    string
 	Title      string
 	Text       string
 	Entries    int
@@ -62,6 +63,7 @@ func init() {
 func main() {
 	if err := loadSettings(); err != nil {
 		fmt.Println(err)
+		settings.Address = ":8080"
 		settings.Entries = 4
 		settings.Title = "Game Jam"
 		settings.UseCaptcha = true
@@ -79,7 +81,7 @@ func main() {
 	http.HandleFunc("/captcha", handleCaptcha)
 	http.HandleFunc("/results", handleResults)
 	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("./static"))))
-	if err := http.ListenAndServe(":8080", nil); err != nil {
+	if err := http.ListenAndServe(settings.Address, nil); err != nil {
 		panic(err)
 	}
 }
