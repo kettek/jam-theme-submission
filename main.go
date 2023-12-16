@@ -223,15 +223,10 @@ func handleCaptcha(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	generateCaptcha(w, r)
 	if capt, ok := sessionCaptchas[sessionManager.Token(r.Context())]; ok {
 		capt.WriteImage(w)
 		return
-	} else {
-		generateCaptcha(w, r)
-		if capt, ok := sessionCaptchas[sessionManager.Token(r.Context())]; ok {
-			capt.WriteImage(w)
-			return
-		}
 	}
 	fmt.Println("missing token for captcha")
 	// TODO: Error out
