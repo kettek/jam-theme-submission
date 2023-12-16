@@ -10,6 +10,7 @@ import (
 	"text/template"
 	"time"
 
+	"github.com/alexedwards/scs/v2"
 	"github.com/steambap/captcha"
 )
 
@@ -31,9 +32,10 @@ var entries Entries
 var saveLock sync.Mutex
 var settings Settings
 var captchaLock sync.Mutex
-var lastCaptchaTime time.Time
-var lastCaptchaData *captcha.Data
 var funcMap template.FuncMap
+
+var sessionManager *scs.SessionManager
+var sessionCaptchas map[string]*captcha.Data
 
 type templateSettings struct {
 	Title           string
@@ -51,6 +53,7 @@ type templateSettings struct {
 }
 
 func init() {
+	sessionCaptchas = make(map[string]*captcha.Data)
 	entries = make(Entries)
 	funcMap = template.FuncMap{
 		"inc": func(i int) int {
@@ -73,16 +76,65 @@ func main() {
 			fmt.Println(err)
 		}
 	}
-	fmt.Println(settings.StartDate, settings.EndDate)
+
+	sessionManager = scs.New()
+	sessionManager.Lifetime = 24 * time.Hour
+
 	if err := loadEntries(); err != nil {
 		fmt.Println(err)
 	}
-	http.HandleFunc("/", handleIndex)
-	http.HandleFunc("/captcha", handleCaptcha)
-	http.HandleFunc("/results", handleResults)
-	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("./static"))))
-	if err := http.ListenAndServe(settings.Address, nil); err != nil {
+
+	go func() {
+		for {
+			// This is lazy and bad, but just clear the captchas after 20 minutes. If this bites anyone, it'll just result in them having to enter a new captcha, so I don't really care.
+			<-time.After(time.Minute * 20)
+			captchaLock.Lock()
+			sessionCaptchas = make(map[string]*captcha.Data)
+			captchaLock.Unlock()
+		}
+	}()
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", handleIndex)
+	mux.HandleFunc("/captcha", handleCaptcha)
+	mux.HandleFunc("/results", handleResults)
+	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("./static"))))
+	if err := http.ListenAndServe(settings.Address, sessionManager.LoadAndSave(mux)); err != nil {
 		panic(err)
+	}
+}
+
+func addCaptcha(token string) error {
+	cap, err := captcha.New(250, 100)
+	if err != nil {
+		return err
+	}
+	captchaLock.Lock()
+	sessionCaptchas[token] = cap
+	captchaLock.Unlock()
+	return nil
+}
+
+func removeCaptcha(token string) {
+	captchaLock.Lock()
+	delete(sessionCaptchas, token)
+	captchaLock.Unlock()
+}
+
+func generateCaptcha(w http.ResponseWriter, r *http.Request) {
+	if !settings.UseCaptcha {
+		return
+	}
+	if token := sessionManager.Token(r.Context()); token != "" {
+		removeCaptcha(token)
+	}
+	if err := sessionManager.RenewToken(r.Context()); err != nil {
+		fmt.Println(err)
+		return
+	}
+	if err := addCaptcha(sessionManager.Token(r.Context())); err != nil {
+		fmt.Println(err)
+		return
 	}
 }
 
@@ -104,20 +156,6 @@ func handleResults(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleIndex(w http.ResponseWriter, r *http.Request) {
-	var err error
-	if settings.UseCaptcha {
-		captchaLock.Lock()
-		defer captchaLock.Unlock()
-		if time.Since(lastCaptchaTime) >= 5*time.Minute {
-			lastCaptchaData, err = captcha.New(150, 50)
-			if err != nil {
-				fmt.Println(err)
-				return
-			}
-			lastCaptchaTime = time.Now()
-		}
-	}
-
 	var s templateSettings
 	s.UseHeader = settings.UseHeader
 	s.UseCaptcha = settings.UseCaptcha
@@ -130,6 +168,7 @@ func handleIndex(w http.ResponseWriter, r *http.Request) {
 		s.IsEnded = true
 	}
 	if r.Method == "GET" {
+		generateCaptcha(w, r)
 		tmpl, err := template.New("index.html").Funcs(funcMap).ParseFiles("index.html")
 		if err != nil {
 			fmt.Println(err)
@@ -152,7 +191,7 @@ func handleIndex(w http.ResponseWriter, r *http.Request) {
 			if k == "submission[]" {
 				s.Submissions = append(s.Submissions, v...)
 			} else if k == "captcha" {
-				if v[0] != lastCaptchaData.Text {
+				if capt, ok := sessionCaptchas[sessionManager.Token(r.Context())]; !ok || v[0] != capt.Text {
 					s.CaptchaFailed = true
 				}
 			}
@@ -184,7 +223,13 @@ func handleCaptcha(w http.ResponseWriter, r *http.Request) {
 	if !settings.UseCaptcha {
 		return
 	}
-	lastCaptchaData.WriteImage(w)
+
+	if capt, ok := sessionCaptchas[sessionManager.Token(r.Context())]; ok {
+		capt.WriteImage(w)
+		return
+	}
+	fmt.Println("missing token for captcha")
+	// TODO: Error out
 }
 
 func loadSettings() error {
