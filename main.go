@@ -168,7 +168,6 @@ func handleIndex(w http.ResponseWriter, r *http.Request) {
 		s.IsEnded = true
 	}
 	if r.Method == "GET" {
-		generateCaptcha(w, r)
 		tmpl, err := template.New("index.html").Funcs(funcMap).ParseFiles("index.html")
 		if err != nil {
 			fmt.Println(err)
@@ -227,6 +226,12 @@ func handleCaptcha(w http.ResponseWriter, r *http.Request) {
 	if capt, ok := sessionCaptchas[sessionManager.Token(r.Context())]; ok {
 		capt.WriteImage(w)
 		return
+	} else {
+		generateCaptcha(w, r)
+		if capt, ok := sessionCaptchas[sessionManager.Token(r.Context())]; ok {
+			capt.WriteImage(w)
+			return
+		}
 	}
 	fmt.Println("missing token for captcha")
 	// TODO: Error out
